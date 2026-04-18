@@ -1,6 +1,11 @@
 # CTF Operations
 
-The **Conditional Token Framework (CTF)** creates ERC1155 tokens for market outcomes. Three core operations: split, merge, redeem.
+The Conditional Token Framework (CTF) powers Polymarket outcome tokens. In V2, positions are collateralized with **pUSD**.
+
+Core operations:
+- **split** — pUSD → Yes + No
+- **merge** — Yes + No → pUSD
+- **redeem** — winning tokens → pUSD after resolution
 
 ## Token Model
 
@@ -8,78 +13,68 @@ Every binary market has two tokens:
 
 | Token | Redeems for | Condition |
 |-------|-------------|-----------|
-| **Yes** | $1.00 USDC.e | Event occurs |
-| **No** | $1.00 USDC.e | Event does not occur |
+| **Yes** | $1.00 pUSD | Event occurs |
+| **No** | $1.00 pUSD | Event does not occur |
 
-Every Yes/No pair is backed by exactly $1.00 USDC.e locked in the CTF contract.
+Every Yes/No pair is fully collateralized by pUSD locked in the CTF system.
 
 ## Split
 
-Convert USDC.e into a full set of outcome tokens.
+Convert pUSD into a full set of outcome tokens.
 
-```
-$100 USDC.e → 100 Yes tokens + 100 No tokens
+```text
+$100 pUSD → 100 Yes tokens + 100 No tokens
 ```
 
 ### Prerequisites
-1. USDC.e balance on Polygon
-2. USDC.e approval for CTF contract
-3. Condition ID of the market (the condition must already be prepared on the CTF contract via `prepareCondition`)
+1. pUSD balance on Polygon
+2. pUSD approval for the CTF contract
+3. Market condition ID
 
 ### Function: `splitPosition`
 
 | Parameter | Type | Value |
 |-----------|------|-------|
-| `collateralToken` | IERC20 | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` (USDC.e) |
-| `parentCollectionId` | bytes32 | `0x0000...0000` (32 zero bytes) |
-| `conditionId` | bytes32 | Market's condition ID |
-| `partition` | uint[] | `[1, 2]` for binary (Yes=1, No=2) |
-| `amount` | uint256 | Amount of USDC.e to split |
+| `collateralToken` | IERC20 | `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` (pUSD) |
+| `parentCollectionId` | bytes32 | `0x0000...0000` |
+| `conditionId` | bytes32 | Market condition ID |
+| `partition` | uint[] | `[1, 2]` for binary markets |
+| `amount` | uint256 | Amount of pUSD to split |
 
 ## Merge
 
-Convert a full set of outcome tokens back to USDC.e. Inverse of split.
+Convert a full set of outcome tokens back into pUSD.
 
+```text
+100 Yes + 100 No → $100 pUSD
 ```
-100 Yes tokens + 100 No tokens → $100 USDC.e
-```
-
-### Prerequisites
-1. Equal amounts of both Yes and No tokens
-2. Condition ID (the condition must already be prepared on the CTF contract via `prepareCondition`)
-3. Sufficient gas for the transaction
 
 ### Function: `mergePositions`
 
-Same parameters as split. Burns one unit of each position per unit of collateral returned.
+Uses the same parameters as split. One full set burns into one unit of pUSD collateral.
 
 ## Redeem
 
-Exchange winning tokens for USDC.e after market resolution.
+After resolution, winning tokens redeem into pUSD.
 
-```
+```text
 Market resolves YES:
-  100 Yes tokens → $100 USDC.e
-  100 No tokens  → $0
+100 Yes → $100 pUSD
+100 No  → $0
 ```
-
-### Prerequisites
-1. Market must be resolved
-2. Hold winning tokens
-3. Know the condition ID
 
 ### Function: `redeemPositions`
 
 | Parameter | Type | Value |
 |-----------|------|-------|
-| `collateralToken` | IERC20 | USDC.e address |
+| `collateralToken` | IERC20 | pUSD |
 | `parentCollectionId` | bytes32 | `0x0000...0000` |
-| `conditionId` | bytes32 | Market's condition ID |
-| `indexSets` | uint[] | `[1, 2]` — redeems both (only winner pays) |
+| `conditionId` | bytes32 | Market condition ID |
+| `indexSets` | uint[] | `[1, 2]` |
 
-Redemption burns your **entire** token balance for the condition — no amount parameter. No deadline — winning tokens are always redeemable.
+Redemption burns your full balance for that condition. There is no amount parameter.
 
-### Payout Vectors
+## Payout Vectors
 
 | Outcome | Payout Vector | Redemption |
 |---------|---------------|------------|
@@ -90,91 +85,49 @@ Redemption burns your **entire** token balance for the condition — no amount p
 
 | Contract | Address | Purpose |
 |----------|---------|---------|
-| CTF | `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` | Token storage and operations |
-| USDC.e (Bridged USDC) | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` | Collateral token |
-| CTF Exchange | `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E` | Standard market trading |
-| Neg Risk CTF Exchange | `0xC5d563A36AE78145C45a50134d48A1215220f80a` | Neg risk market trading |
+| pUSD | `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` | Trading collateral |
+| USDC.e | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` | Wrap source asset for API-only flows |
+| CTF | `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` | Token storage and split/merge/redeem |
+| CTF Exchange V2 | `0xE111180000d2663C0091e4f400237545B87B996B` | Standard market trading |
+| Neg Risk CTF Exchange V2 | `0xe2222d279d744050d28e00520010520000310F59` | Neg risk market trading |
 | Neg Risk Adapter | `0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296` | Neg risk conversions |
+| Collateral Onramp | `0x93070a847efEf7F70739046A929D47a521F5B8ee` | Wrap USDC.e → pUSD |
+| Collateral Offramp | `0x2957922Eb93258b93368531d39fAcCA3B4dC5854` | Unwrap pUSD → USDC.e |
 
 ## Approval Matrix
 
-Before trading or CTF operations, the funder must approve the relevant contracts:
-
 | Operation | Contract to Approve | Token |
-|-----------|-------------------|-------|
-| Buy order (standard) | CTF Exchange | USDC.e |
-| Sell order (standard) | CTF Exchange | Conditional tokens |
-| Buy order (neg risk) | Neg Risk CTF Exchange | USDC.e |
-| Sell order (neg risk) | Neg Risk CTF Exchange | Conditional tokens |
-| Split | CTF | USDC.e |
+|-----------|---------------------|-------|
+| Buy order (standard) | CTF Exchange V2 | pUSD |
+| Sell order (standard) | CTF Exchange V2 | Conditional tokens |
+| Buy order (neg risk) | Neg Risk CTF Exchange V2 | pUSD |
+| Sell order (neg risk) | Neg Risk CTF Exchange V2 | Conditional tokens |
+| Split | CTF | pUSD |
 | Neg risk conversion | Neg Risk Adapter | Conditional tokens |
-
-## Standard vs Neg Risk Markets
-
-| Feature | Standard Markets | Neg Risk Markets |
-|---------|-----------------|------------------|
-| CTF Contract | ConditionalTokens | ConditionalTokens |
-| Exchange Contract | CTF Exchange | Neg Risk CTF Exchange |
-| Multi-outcome | Independent markets | Linked via conversion |
-| `negRisk` flag | `false` | `true` |
-| Order option | `negRisk: false` | `negRisk: true` |
+| Wrap | Collateral Onramp | USDC.e |
+| Unwrap | Collateral Offramp | pUSD |
 
 ## Negative Risk
 
-Multi-outcome events where only one outcome can win. A No token in any market can be **converted** into 1 Yes token in every other market.
+Neg risk markets are linked multi-outcome markets where a No token can convert into baskets of Yes tokens in other outcomes.
 
-### Conversion Example
-
-Event: "Who wins?" with outcomes Trump, Harris, Other.
-
-| Outcome | Before | After Conversion |
-|---------|--------|------------------|
-| Trump | — | 1 Yes |
-| Harris | — | 1 Yes |
-| Other | 1 No | — |
-
-Conversion is atomic through the Neg Risk Adapter contract.
-
-### Identifying Neg Risk Markets
+### Identifying a neg risk market
 
 ```json
 {
-  "negRisk": true   // on event or market object from API
+  "negRisk": true
 }
 ```
 
-When placing orders: pass `negRisk: true` in options.
-
-## Augmented Negative Risk
-
-For events where new outcomes emerge after trading begins (e.g., new candidate enters race).
-
-| Outcome Type | Description |
-|--------------|-------------|
-| Named outcomes | Known outcomes (e.g., "Trump", "Harris") |
-| Placeholder outcomes | Reserved slots clarified later (e.g., "Person A") |
-| Explicit Other | Catches any unnamed outcome |
-
-### Identifying
-
-```json
-{
-  "enableNegRisk": true,
-  "negRiskAugmented": true
-}
-```
-
-### Rules
-- Only trade on **named outcomes** — ignore placeholders
-- If correct outcome is not named at resolution, market resolves to "Other"
-- "Other" definition changes as placeholders are clarified — avoid trading it directly
+When placing orders, pass `negRisk: true` in order options.
 
 ## Token ID Computation
 
-Token IDs are computed onchain in three steps:
+Position IDs are computed as:
+1. `getConditionId(oracle, questionId, outcomeSlotCount)`
+2. `getCollectionId(parentCollectionId, conditionId, indexSet)`
+3. `getPositionId(collateralToken, collectionId)`
 
-1. `getConditionId(oracle, questionId, outcomeSlotCount)` — oracle = UMA CTF Adapter, outcomeSlotCount = 2 for binary
-2. `getCollectionId(parentCollectionId, conditionId, indexSet)` — parentCollectionId = bytes32(0), indexSet = 1 (Yes) or 2 (No)
-3. `getPositionId(collateralToken, collectionId)` — combines USDC.e contract address on Polygon with collection
+In V2, the `collateralToken` for Polymarket positions is **pUSD**.
 
-In practice, get token IDs from the Markets API `tokens` array. Manual computation only needed for direct contract interaction.
+In practice, prefer token IDs returned by the Gamma API `tokens` array.

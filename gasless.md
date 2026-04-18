@@ -1,46 +1,69 @@
 # Gasless Transactions
 
-Polymarket's **Relayer Client** enables gasless transactions. Instead of requiring users to hold POL, Polymarket's infrastructure pays gas fees. Users only need USDC.e to trade.
+Polymarket's relayer enables gasless onchain actions. Users do not need POL for gas; Polymarket sponsors execution.
 
-Requires **Builder Program** membership. You need Builder API credentials.
+For trading collateral, users need **pUSD**.
+
+## What changed in V2
+
+- trading collateral is **pUSD**, not USDC.e
+- recommended SDK auth uses **Relayer API Keys**
+- CLOB order attribution moved to `builderCode`, but relayer HTTP endpoints can still support Builder API Key auth at the raw API level
+- recommended relayer client setup now uses an options object
 
 ## How It Works
 
-1. Your app creates a transaction
-2. User signs it with their private key
-3. App sends to Polymarket's relayer
-4. Relayer submits onchain and pays gas
-5. Transaction executes from the user's wallet
+1. Your app prepares one or more transactions
+2. The user signs through their wallet
+3. Your app submits through the relayer
+4. Polymarket pays gas
+5. The transaction executes from the user's wallet / proxy
 
-## What's Covered
+## Covered operations
 
 | Operation | Description |
 |-----------|-------------|
-| Wallet deployment | Deploy Safe or Proxy wallets for new users |
-| Token approvals | Approve contracts to spend USDC.e or outcome tokens |
-| CTF operations | Split, merge, redeem positions |
-| Transfers | Move tokens between addresses |
+| Wallet deployment | Deploy Safe or Proxy wallets |
+| Token approvals | Approve pUSD or outcome tokens |
+| CTF operations | Split, merge, redeem |
+| Transfers | Move assets |
+
+## Authentication
+
+### Recommended: Relayer API Keys
+
+Create a Relayer API key from Polymarket settings.
+
+Headers:
+
+| Header | Description |
+|--------|-------------|
+| `RELAYER_API_KEY` | Relayer API key |
+| `RELAYER_API_KEY_ADDRESS` | Address that owns the key |
+
+### Raw API note
+
+The relayer API reference also allows Builder API Key auth on some endpoints, but for SDK integrations the current documented path is **Relayer API Keys**.
 
 ## Installation
 
 ```bash
 # TypeScript
-npm install @polymarket/builder-relayer-client @polymarket/builder-signing-sdk
+npm install @polymarket/builder-relayer-client
 
 # Python
-pip install py-builder-relayer-client py-builder-signing-sdk
+pip install py-builder-relayer-client
 ```
 
 ## Client Setup
 
-### TypeScript (Local Signing)
+### TypeScript
 
 ```typescript
 import { createWalletClient, http, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { polygon } from "viem/chains";
 import { RelayClient } from "@polymarket/builder-relayer-client";
-import { BuilderConfig } from "@polymarket/builder-signing-sdk";
 
 const account = privateKeyToAccount(process.env.PRIVATE_KEY as Hex);
 const wallet = createWalletClient({
@@ -49,133 +72,85 @@ const wallet = createWalletClient({
   transport: http(process.env.RPC_URL),
 });
 
-const builderConfig = new BuilderConfig({
-  localBuilderCreds: {
-    key: process.env.POLY_BUILDER_API_KEY!,
-    secret: process.env.POLY_BUILDER_SECRET!,
-    passphrase: process.env.POLY_BUILDER_PASSPHRASE!,
-  },
+const client = new RelayClient({
+  host: "https://relayer-v2.polymarket.com/",
+  chain: 137,
+  signer: wallet,
+  relayerApiKey: process.env.RELAYER_API_KEY!,
+  relayerApiKeyAddress: process.env.RELAYER_API_KEY_ADDRESS!,
 });
-
-const client = new RelayClient(
-  "https://relayer-v2.polymarket.com/",
-  137,
-  wallet,
-  builderConfig
-);
 ```
 
-### Python (Local Signing)
+### Python
 
 ```python
 import os
 from py_builder_relayer_client.client import RelayClient
-from py_builder_signing_sdk import BuilderConfig, BuilderApiKeyCreds
-
-builder_config = BuilderConfig(
-    local_builder_creds=BuilderApiKeyCreds(
-        key=os.getenv("POLY_BUILDER_API_KEY"),
-        secret=os.getenv("POLY_BUILDER_SECRET"),
-        passphrase=os.getenv("POLY_BUILDER_PASSPHRASE"),
-    )
-)
 
 client = RelayClient(
-    "https://relayer-v2.polymarket.com",
-    137,
-    os.getenv("PRIVATE_KEY"),
-    builder_config,
+    host="https://relayer-v2.polymarket.com",
+    chain=137,
+    signer=os.getenv("PRIVATE_KEY"),
+    relayer_api_key=os.environ["RELAYER_API_KEY"],
+    relayer_api_key_address=os.environ["RELAYER_API_KEY_ADDRESS"],
 )
-```
-
-### Remote Signing
-
-Keep credentials on your server. Client points to signing endpoint:
-
-```typescript
-// TypeScript
-const builderConfig = new BuilderConfig({
-  remoteBuilderConfig: { url: "https://your-server.com/sign" },
-});
-
-const client = new RelayClient(
-  "https://relayer-v2.polymarket.com/",
-  137,
-  wallet,
-  builderConfig
-);
-```
-
-```python
-# Python
-from py_builder_signing_sdk import BuilderConfig, RemoteBuilderConfig
-
-builder_config = BuilderConfig(
-    remote_builder_config=RemoteBuilderConfig(url="https://your-server.com/sign")
-)
-
-client = RelayClient("https://relayer-v2.polymarket.com", 137, pk, builder_config)
 ```
 
 ## Wallet Types
 
 | Type | Deployment | Best For |
 |------|------------|----------|
-| **Safe** | Call `deploy()` before first transaction | Most builder integrations |
-| **Proxy** | Auto-deploys on first transaction | Magic Link users |
+| **Safe** | Call `deploy()` first | Most integrations |
+| **Proxy** | Auto-deploy on first tx | Proxy-wallet flows |
 
 ```typescript
-// TypeScript — Safe wallet
 import { RelayClient, RelayerTxType } from "@polymarket/builder-relayer-client";
 
-const client = new RelayClient(
-  "https://relayer-v2.polymarket.com/",
-  137,
-  wallet,
-  builderConfig,
-  RelayerTxType.SAFE
-);
+const client = new RelayClient({
+  host: "https://relayer-v2.polymarket.com/",
+  chain: 137,
+  signer: wallet,
+  relayerApiKey: process.env.RELAYER_API_KEY!,
+  relayerApiKeyAddress: process.env.RELAYER_API_KEY_ADDRESS!,
+  txType: RelayerTxType.SAFE,
+});
 
-// Deploy before first transaction
 const response = await client.deploy();
 const result = await response.wait();
-console.log("Safe Address:", result?.proxyAddress);
-```
-
-```python
-# Python — Safe wallet
-response = client.deploy()
-result = response.wait()
-print("Safe Address:", result.get("proxyAddress"))
+console.log(result?.proxyAddress);
 ```
 
 ## Executing Transactions
 
 ```typescript
 interface Transaction {
-  to: string;    // Target contract address
-  data: string;  // Encoded function call
-  value: string; // POL to send (usually "0")
+  to: string;
+  data: string;
+  value: string;
 }
 
 const response = await client.execute(transactions, "Description");
-const result = await response.wait();
+await response.wait();
 ```
 
-### Token Approval Example
+### Approval example
 
 ```typescript
 import { encodeFunctionData, maxUint256 } from "viem";
 
-const USDC = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
+const pUSD = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
 const CTF = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
 
 const approveTx = {
-  to: USDC,
+  to: pUSD,
   data: encodeFunctionData({
     abi: [{
-      name: "approve", type: "function",
-      inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+      name: "approve",
+      type: "function",
+      inputs: [
+        { name: "spender", type: "address" },
+        { name: "amount", type: "uint256" },
+      ],
       outputs: [{ type: "bool" }],
     }],
     functionName: "approve",
@@ -184,53 +159,35 @@ const approveTx = {
   value: "0",
 };
 
-const response = await client.execute([approveTx], "Approve USDC.e for CTF");
-await response.wait();
-```
-
-### Batch Transactions
-
-Execute multiple operations atomically in a single call:
-
-```typescript
-const response = await client.execute(
-  [approveTx, transferTx],
-  "Approve and transfer"
-);
-await response.wait();
+await client.execute([approveTx], "Approve pUSD for CTF");
 ```
 
 ## Transaction States
 
 | State | Terminal | Description |
 |-------|----------|-------------|
-| `STATE_NEW` | No | Received by relayer |
+| `STATE_NEW` | No | Received |
 | `STATE_EXECUTED` | No | Submitted onchain |
 | `STATE_MINED` | No | Included in a block |
 | `STATE_CONFIRMED` | Yes | Finalized successfully |
-| `STATE_FAILED` | Yes | Failed permanently |
-| `STATE_INVALID` | Yes | Rejected as invalid |
-
-## Builder Setup
-
-1. Go to polymarket.com/settings?tab=builder
-2. Create builder profile + generate API keys
-3. Implement builder signing in your CLOB client
-4. All orders automatically attributed to your builder account
+| `STATE_FAILED` | Yes | Permanent failure |
+| `STATE_INVALID` | Yes | Rejected |
 
 ## Contract Addresses
 
 | Contract | Address | Approval Needed |
 |----------|---------|-----------------|
-| USDC.e (Bridged USDC) | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` | — |
-| CTF | `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` | USDC.e |
-| CTF Exchange | `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E` | USDC.e, Tokens |
-| Neg Risk CTF Exchange | `0xC5d563A36AE78145C45a50134d48A1215220f80a` | USDC.e, Tokens |
-| Neg Risk Adapter | `0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296` | Tokens |
+| pUSD | `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` | — |
+| USDC.e | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` | Wrap source asset |
+| CTF | `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` | pUSD |
+| CTF Exchange V2 | `0xE111180000d2663C0091e4f400237545B87B996B` | pUSD, tokens |
+| Neg Risk CTF Exchange V2 | `0xe2222d279d744050d28e00520010520000310F59` | pUSD, tokens |
+| Neg Risk Adapter | `0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296` | tokens |
+| Collateral Onramp | `0x93070a847efEf7F70739046A929D47a521F5B8ee` | approve USDC.e |
+| Collateral Offramp | `0x2957922Eb93258b93368531d39fAcCA3B4dC5854` | approve pUSD |
 
-## SDKs
+## Notes
 
-- [Builder Relayer Client (TypeScript)](https://github.com/Polymarket/builder-relayer-client)
-- [Builder Relayer Client (Python)](https://github.com/Polymarket/py-builder-relayer-client)
-- [Builder Signing SDK (TypeScript)](https://github.com/Polymarket/builder-signing-sdk)
-- [Builder Signing SDK (Python)](https://github.com/Polymarket/py-builder-signing-sdk)
+- keep Relayer API keys server-side
+- relayer base URL remains `https://relayer-v2.polymarket.com/`
+- for API-only users, wrap USDC.e to pUSD before trading if needed
