@@ -6,15 +6,15 @@ Agent skill for building on Polymarket CLOB V2. Covers authentication, trading, 
 
 ```
 web3-polymarket/
-├── SKILL.md
-├── README.md
-├── authentication.md
-├── order-patterns.md
-├── market-data.md
-├── websocket.md
-├── ctf-operations.md
-├── bridge.md
-└── gasless.md
+├── SKILL.md              # Entry point — quick reference, client setup, core patterns
+├── README.md             # This file
+├── authentication.md     # L1/L2 auth, builderCode attribution, relayer auth notes
+├── order-patterns.md     # Order types, tick sizes, cancel, heartbeat, errors
+├── market-data.md        # Gamma API, Data API, CLOB orderbook, fee params, subgraph
+├── websocket.md          # Market/user/sports channels, subscribe, heartbeat
+├── ctf-operations.md     # Split, merge, redeem, negative risk, token IDs
+├── bridge.md             # Deposits, withdrawals, supported chains/tokens
+└── gasless.md            # Relayer client, wallet deployment, builder / relayer auth
 ```
 
 ## V2 status
@@ -34,8 +34,12 @@ Key V2 changes reflected here:
 
 ## How It Works
 
-1. **SKILL.md loads first** for quick-reference setup and core flows.
-2. **Reference files load on demand** for deeper detail.
+The skill uses **progressive disclosure** to stay efficient with context:
+
+1. **SKILL.md loads first** — contains API endpoints, contract addresses, client setup, and core code patterns. Enough for most tasks.
+2. **Reference files load on demand** — when a task needs deeper detail, the agent reads the relevant file.
+
+This keeps the initial context small while preserving the richer reference material in the topic files.
 
 ## When Agents Use This Skill
 
@@ -150,14 +154,14 @@ const response = await tradingClient.createAndPostOrder(
 
 | File | Use it when you need to... |
 |------|----------------------------|
-| [SKILL.md](SKILL.md) | Get the quick-reference V2 setup |
-| [authentication.md](authentication.md) | Understand L1/L2 auth and builderCode attribution |
-| [order-patterns.md](order-patterns.md) | Create, submit, cancel, and maintain orders |
-| [market-data.md](market-data.md) | Query events, markets, CLOB data, and pagination |
-| [websocket.md](websocket.md) | Stream market and user updates |
-| [ctf-operations.md](ctf-operations.md) | Split, merge, and redeem pUSD-backed positions |
-| [bridge.md](bridge.md) | Deposit, withdraw, and track bridge flows |
-| [gasless.md](gasless.md) | Use the relayer for gasless onchain actions |
+| [SKILL.md](SKILL.md) | Get started — has the quick-reference V2 setup |
+| [authentication.md](authentication.md) | Understand L1/L2 auth, builderCode attribution, or relayer auth details |
+| [order-patterns.md](order-patterns.md) | Use advanced order types (GTD, post-only, batch), handle errors, or implement heartbeat |
+| [market-data.md](market-data.md) | Query markets by slug/tag, paginate results, inspect fee params, or estimate fill prices |
+| [websocket.md](websocket.md) | Stream real-time orderbook updates, trade notifications, or sports scores |
+| [ctf-operations.md](ctf-operations.md) | Split/merge/redeem tokens, work with neg risk markets, or compute token IDs |
+| [bridge.md](bridge.md) | Deposit from other chains, withdraw, check supported assets, or track transaction status |
+| [gasless.md](gasless.md) | Set up gas-free transactions via the relayer, deploy wallets, or configure relayer auth |
 
 ## SDKs
 

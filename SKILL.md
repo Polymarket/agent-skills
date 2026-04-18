@@ -118,7 +118,7 @@ client = ClobClient(
 
 - FOK/FAK BUY: `amount` = dollar amount to spend
 - FOK/FAK SELL: `amount` = number of shares to sell
-- Market buy orders can include `userUSDCBalance` for fee-aware sizing
+- Market buy orders can include `userUSDCBalance` for fee-aware sizing; the field name is legacy, but the value should reflect available **pUSD** trading collateral
 - Fees are **not** set in signed orders in V2
 
 ## Quick Reference: Signature Types
@@ -209,10 +209,12 @@ ws.onopen = () => {
 
 ## Reference files (load on demand)
 
-- **Authentication**: [authentication.md](authentication.md)
-- **Order patterns**: [order-patterns.md](order-patterns.md)
-- **Market data**: [market-data.md](market-data.md)
-- **WebSocket**: [websocket.md](websocket.md)
-- **CTF operations**: [ctf-operations.md](ctf-operations.md)
-- **Bridge**: [bridge.md](bridge.md)
-- **Gasless transactions**: [gasless.md](gasless.md)
+Only read these when the task requires deeper detail on a specific topic:
+
+- **Authentication** (L1/L2, builderCode attribution, relayer auth details): [authentication.md](authentication.md)
+- **Order patterns** (GTC/GTD/FOK/FAK, tick sizes, cancel, heartbeat, errors): [order-patterns.md](order-patterns.md)
+- **Market data** (Gamma API, Data API, CLOB orderbook, fee params, subgraph): [market-data.md](market-data.md)
+- **WebSocket** (market/user/sports channels, subscribe, heartbeat): [websocket.md](websocket.md)
+- **CTF operations** (split, merge, redeem, neg risk, token IDs): [ctf-operations.md](ctf-operations.md)
+- **Bridge** (deposits, withdrawals, supported chains/tokens, status): [bridge.md](bridge.md)
+- **Gasless transactions** (relayer client, wallet deployment, auth): [gasless.md](gasless.md)

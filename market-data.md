@@ -13,6 +13,9 @@ Base URL: `https://gamma-api.polymarket.com`
 ### Events
 
 ```bash
+# All active events
+GET https://gamma-api.polymarket.com/events?active=true&closed=false&limit=100
+
 # By slug
 GET https://gamma-api.polymarket.com/events?slug=fed-decision-in-october
 
@@ -21,6 +24,9 @@ GET https://gamma-api.polymarket.com/events?tag_id=100381&closed=false&limit=10
 
 # By series
 GET https://gamma-api.polymarket.com/events?series_id=10345&closed=false&limit=20
+
+# Sorted by volume
+GET https://gamma-api.polymarket.com/events?active=true&closed=false&order=volume_24hr&ascending=false&limit=100
 ```
 
 ### Markets
@@ -29,6 +35,17 @@ GET https://gamma-api.polymarket.com/events?series_id=10345&closed=false&limit=2
 # By slug
 GET https://gamma-api.polymarket.com/markets?slug=fed-decision-in-october
 ```
+
+### Sort Parameters
+
+| Parameter | Values |
+|-----------|--------|
+| `order` | `volume_24hr`, `volume`, `liquidity`, `start_date`, `end_date`, `competitive`, `closed_time` |
+| `ascending` | `true` / `false` (default: `false`) |
+| `active` | `true` / `false` |
+| `closed` | `true` / `false` |
+| `limit` | endpoint-specific |
+| `offset` | legacy offset pagination on non-keyset endpoints |
 
 ## Recommended pagination: keyset endpoints
 
@@ -71,7 +88,10 @@ Rules:
 ### Tags & Sports metadata
 
 ```bash
+# Discover tags
 GET https://gamma-api.polymarket.com/tags
+
+# Sports metadata
 GET https://gamma-api.polymarket.com/sports
 ```
 
@@ -124,6 +144,8 @@ const spread = await client.getSpread("TOKEN_ID");
 const last = await client.getLastTradePrice("TOKEN_ID");
 ```
 
+If the spread is wide, consuming both midpoint and last-trade price can produce better UI behavior than midpoint alone.
+
 ### Batch reads
 
 All major market-data methods have batch variants.
@@ -134,7 +156,7 @@ All major market-data methods have batch variants.
 | `getPrice()` | `getPrices()` | `POST /prices` |
 | `getMidpoint()` | `getMidpoints()` | `POST /midpoints` |
 | `getSpread()` | `getSpreads()` | `POST /spreads` |
-| `getLastTradePrice()` | `getLastTradesPrices()` | request body variant documented |
+| `getLastTradePrice()` | `getLastTradePrices()` | request body variant documented |
 
 ## V2 CLOB market info
 
@@ -170,6 +192,8 @@ For manual inspection, use `getClobMarketInfo()`.
 ## Price history
 
 ```typescript
+import { PriceHistoryInterval } from "@polymarket/clob-client-v2";
+
 const history = await client.getPricesHistory({
   market: "TOKEN_ID",
   interval: PriceHistoryInterval.ONE_DAY,
@@ -184,6 +208,23 @@ Intervals commonly used:
 - `1w`
 - `1m`
 - `max`
+
+Use `startTs` / `endTs` for absolute ranges when you do not want interval-based presets.
+
+## Estimate Fill Price
+
+Walk the orderbook to estimate slippage for a given order size:
+
+```typescript
+import { OrderType, Side } from "@polymarket/clob-client-v2";
+
+const price = await client.calculateMarketPrice(
+  "TOKEN_ID",
+  Side.BUY,
+  500,
+  OrderType.FOK,
+);
+```
 
 ## Key Market Fields
 

@@ -129,6 +129,8 @@ V2 replaces that with a public **builder code** attached directly to each order.
 ### Per-order builder code
 
 ```typescript
+import { ClobClient, Side } from "@polymarket/clob-client-v2";
+
 await client.createAndPostOrder(
   {
     tokenID: "TOKEN_ID",
@@ -166,6 +168,23 @@ const client = new ClobClient({
 - added:
   - `builderCode` on each order, or
   - `builderConfig: { builderCode }` on the client
+
+## Raw Relayer Builder Auth
+
+For normal CLOB order attribution, use `builderCode`.
+For raw relayer HTTP endpoints, the official docs still describe Builder API key auth and Relayer API key auth.
+
+### Builder / Relayer auth headers
+
+| Header | Description |
+|--------|-------------|
+| `POLY_BUILDER_API_KEY` | Builder API key identifier |
+| `POLY_BUILDER_PASSPHRASE` | Builder passphrase |
+| `POLY_BUILDER_SIGNATURE` | Builder HMAC signature |
+| `POLY_BUILDER_TIMESTAMP` | Current UNIX timestamp |
+
+Use these only when you are integrating with the relayer directly.
+Do not treat them as the order-attribution path for CLOB V2 orders.
 
 ## Raw Order Signing Changes
 

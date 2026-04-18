@@ -53,6 +53,9 @@ const response = await client.createAndPostOrder(
 ```
 
 ```python
+from py_clob_client.clob_types import OrderArgs, OrderType
+from py_clob_client.order_builder.constants import BUY
+
 response = client.create_and_post_order(
     OrderArgs(token_id="TOKEN_ID", price=0.50, size=10, side=BUY),
     options={"tick_size": "0.01", "neg_risk": False},
@@ -71,11 +74,20 @@ const signedOrder = await client.createOrder(
 const response = await client.postOrder(signedOrder, OrderType.GTC);
 ```
 
+```python
+signed_order = client.create_order(
+    OrderArgs(token_id="TOKEN_ID", price=0.50, size=10, side=BUY),
+    options={"tick_size": "0.01", "neg_risk": False},
+)
+response = client.post_order(signed_order, OrderType.GTC)
+```
+
 ## Market Orders (FOK / FAK)
 
 - **BUY**: `amount` is the dollar amount to spend
 - **SELL**: `amount` is the number of shares to sell
 - optional `userUSDCBalance` helps fee-aware market-buy calculations in V2
+- the field name is legacy; in V2 the value supplied should reflect the user's available **pUSD** trading collateral balance
 
 ```typescript
 const response = await client.createAndPostMarketOrder(
@@ -92,6 +104,17 @@ const response = await client.createAndPostMarketOrder(
 );
 ```
 
+```python
+buy_order = client.create_market_order(
+    token_id="TOKEN_ID",
+    side=BUY,
+    amount=100,
+    price=0.50,
+    options={"tick_size": "0.01", "neg_risk": False},
+)
+client.post_order(buy_order, OrderType.FOK)
+```
+
 ## GTD Orders
 
 Expiration remains a UNIX timestamp in seconds.
@@ -106,10 +129,26 @@ await client.createAndPostOrder(
 );
 ```
 
+```python
+import time
+
+expiration = int(time.time()) + 60 + 3600
+
+response = client.create_and_post_order(
+    OrderArgs(token_id="TOKEN_ID", price=0.50, size=10, side=BUY, expiration=expiration),
+    options={"tick_size": "0.01", "neg_risk": False},
+    order_type=OrderType.GTD,
+)
+```
+
 ## Post-only Orders
 
 ```typescript
 const response = await client.postOrder(signedOrder, OrderType.GTC, true);
+```
+
+```python
+response = client.post_order(signed_order, OrderType.GTC, post_only=True)
 ```
 
 Rules:
@@ -142,6 +181,28 @@ const orders = [
 await client.postOrders(orders);
 ```
 
+```python
+from py_clob_client.clob_types import OrderArgs, OrderType, PostOrdersArgs
+from py_clob_client.order_builder.constants import BUY, SELL
+
+response = client.post_orders([
+    PostOrdersArgs(
+        order=client.create_order(
+            OrderArgs(price=0.48, size=500, side=BUY, token_id="TOKEN_ID"),
+            options={"tick_size": "0.01", "neg_risk": False},
+        ),
+        orderType=OrderType.GTC,
+    ),
+    PostOrdersArgs(
+        order=client.create_order(
+            OrderArgs(price=0.52, size=500, side=SELL, token_id="TOKEN_ID"),
+            options={"tick_size": "0.01", "neg_risk": False},
+        ),
+        orderType=OrderType.GTC,
+    ),
+])
+```
+
 ## Cancel Orders
 
 ```typescript
@@ -150,6 +211,16 @@ await client.cancelOrders(["0xID_1", "0xID_2"]);
 await client.cancelAll();
 await client.cancelMarketOrders({ market: "0xCONDITION_ID" });
 await client.cancelMarketOrders({ market: "0xCONDITION_ID", asset_id: "TOKEN_ID" });
+```
+
+```python
+client.cancel(order_id="0xORDER_ID")
+client.cancel_orders(["0xID_1", "0xID_2"])
+client.cancel_all()
+client.cancel_market_orders(
+    market="0xCONDITION_ID",
+    asset_id="TOKEN_ID",
+)
 ```
 
 ## Heartbeat
@@ -163,6 +234,20 @@ setInterval(async () => {
   heartbeatId = resp.heartbeat_id;
 }, 5000);
 ```
+
+```python
+import time
+
+heartbeat_id = ""
+while True:
+    resp = client.post_heartbeat(heartbeat_id)
+    heartbeat_id = resp["heartbeat_id"]
+    time.sleep(5)
+```
+
+Notes:
+- first request uses an empty heartbeat id
+- if you send an invalid or expired heartbeat id, the server returns the current one in the error response
 
 ## Trade / Insert Statuses
 
@@ -192,6 +277,12 @@ Common documented errors include:
 - `FOK_ORDER_NOT_FILLED_ERROR`
 - `MARKET_NOT_READY`
 
+Typical meanings:
+- `INVALID_ORDER_MIN_TICK_SIZE` — price does not match the market tick size
+- `INVALID_ORDER_MIN_SIZE` — order size is below the market minimum
+- `INVALID_ORDER_NOT_ENOUGH_BALANCE` — insufficient balance or allowance
+- `INVALID_POST_ONLY_ORDER` — post-only order would cross the book
+
 ## Prerequisites
 
 Before placing orders, the funder address must approve the exchange contract.
@@ -202,6 +293,12 @@ Before placing orders, the funder address must approve the exchange contract.
 Relevant exchange contracts:
 - standard: `0xE111180000d2663C0091e4f400237545B87B996B`
 - neg risk: `0xe2222d279d744050d28e00520010520000310F59`
+
+## Sports Markets
+
+- outstanding limit orders may be cancelled when the game begins
+- marketable orders may be placement-delayed around game state changes
+- scheduled start times can shift, so avoid hardcoding assumptions around exact open / close transitions
 
 ## Raw signing checklist
 
