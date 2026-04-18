@@ -1,10 +1,18 @@
 # Authentication
 
-Polymarket uses two-level auth: **L1** (EIP-712 private key signing) to create credentials, **L2** (HMAC-SHA256 API key signing) to authenticate requests. Builder program adds a separate set of **builder headers** for order attribution and relayer access.
+Polymarket CLOB V2 keeps the same two-layer auth model:
+- **L1**: EIP-712 wallet signature for API key creation / derivation
+- **L2**: HMAC-SHA256 request signing with API credentials
 
-## L1 Authentication (Private Key)
+Important V2 clarification:
+- **L1/L2 auth is unchanged** from V1
+- **Builder order attribution no longer uses `POLY_BUILDER_*` headers**
+- Builders now attach a **`builderCode`** to orders
+- Raw relayer HTTP endpoints may still accept Builder API key auth, but normal CLOB trading attribution is now `builderCode`-based
 
-L1 proves wallet ownership via EIP-712 signature. Used to create or derive API credentials.
+## L1 Authentication
+
+L1 proves wallet ownership and is used to create or derive API credentials.
 
 ### EIP-712 Domain
 
@@ -23,76 +31,79 @@ const types = {
     { name: "message", type: "string" },
   ],
 };
-
-const value = {
-  address: signingAddress,       // The signing address
-  timestamp: ts,                 // The CLOB API server timestamp
-  nonce: nonce,                  // The nonce used
-  message: "This message attests that I control the given wallet",
-};
 ```
+
+The auth domain remains version `"1"` in V2.
 
 ### L1 Headers
 
 | Header | Description |
 |--------|-------------|
 | `POLY_ADDRESS` | Polygon signer address |
-| `POLY_SIGNATURE` | CLOB EIP-712 signature |
+| `POLY_SIGNATURE` | EIP-712 signature |
 | `POLY_TIMESTAMP` | Current UNIX timestamp |
-| `POLY_NONCE` | Nonce (default: 0) |
+| `POLY_NONCE` | Nonce used for deterministic key derivation |
 
 ### Create / Derive Credentials
 
 ```typescript
-// TypeScript
-const client = new ClobClient("https://clob.polymarket.com", 137, signer);
+import { ClobClient } from "@polymarket/clob-client-v2";
+
+const client = new ClobClient({
+  host: "https://clob.polymarket.com",
+  chain: 137,
+  signer,
+});
+
 const creds = await client.createOrDeriveApiKey();
-// { apiKey: "uuid", secret: "base64...", passphrase: "string" }
 ```
 
 ```python
-# Python
-client = ClobClient("https://clob.polymarket.com", key=pk, chain_id=137)
+from py_clob_client.client import ClobClient
+
+client = ClobClient(host="https://clob.polymarket.com", chain=137, key=pk)
 creds = client.create_or_derive_api_creds()
 ```
 
-**REST endpoints:**
-- `POST {host}/auth/api-key` — create new credentials (requires L1 headers)
-- `GET {host}/auth/derive-api-key` — derive existing credentials (requires L1 headers)
+**REST endpoints**
+- `POST {host}/auth/api-key`
+- `GET {host}/auth/derive-api-key`
 
-## L2 Authentication (API Key)
+## L2 Authentication
 
-L2 uses HMAC-SHA256 signatures from the API credentials. Required for all `/v1/trade/*` endpoints.
+L2 uses your API credentials for HMAC signing. Required for trading endpoints.
 
-### L2 Headers (all 5 required)
+### L2 Headers
 
 | Header | Description |
 |--------|-------------|
 | `POLY_ADDRESS` | Polygon signer address |
 | `POLY_SIGNATURE` | HMAC signature for request |
 | `POLY_TIMESTAMP` | Current UNIX timestamp |
-| `POLY_API_KEY` | User's API `apiKey` value |
-| `POLY_PASSPHRASE` | User's API `passphrase` value |
+| `POLY_API_KEY` | User API key |
+| `POLY_PASSPHRASE` | User API passphrase |
 
 ### Initialize Trading Client
 
 ```typescript
-// TypeScript
-const client = new ClobClient(
-  "https://clob.polymarket.com",
-  137,
+import { ClobClient } from "@polymarket/clob-client-v2";
+
+const client = new ClobClient({
+  host: "https://clob.polymarket.com",
+  chain: 137,
   signer,
-  apiCreds,       // { apiKey, secret, passphrase }
-  2,              // signatureType
-  funderAddress   // proxy wallet address
-);
+  creds: apiCreds,
+  signatureType: 2,
+  funderAddress,
+});
 ```
 
 ```python
-# Python
+from py_clob_client.client import ClobClient
+
 client = ClobClient(
     host="https://clob.polymarket.com",
-    chain_id=137,
+    chain=137,
     key=pk,
     creds=api_creds,
     signature_type=2,
@@ -104,103 +115,91 @@ client = ClobClient(
 
 | Type | Value | When to Use |
 |------|-------|-------------|
-| EOA | `0` | Standard Ethereum wallet (MetaMask). Funder is the EOA address and will need POL to pay gas on transactions. |
-| POLY_PROXY | `1` | A custom proxy wallet only used with users who logged in via Magic Link email/Google. Using this requires the user to have exported their PK from Polymarket.com and imported into your app. |
-| GNOSIS_SAFE | `2` | Gnosis Safe multisig proxy wallet (most common). Use this for any new or returning user who does not fit the other 2 types. |
+| EOA | `0` | Standard externally owned wallet |
+| POLY_PROXY | `1` | Legacy Polymarket proxy wallets |
+| GNOSIS_SAFE | `2` | Gnosis Safe / proxy wallet flows |
 
-The **funder** is the address holding funds. For proxy wallets, find it at polymarket.com/settings. Proxy wallets are auto-deployed on first Polymarket.com login.
+The **funder** is the address holding the funds used for trading.
 
-## Builder Headers
+## Builder Attribution in V2
 
-Builder authentication is separate from L1/L2. Used for order attribution and relayer access.
+V1 used Builder HMAC headers plus `builder-signing-sdk` for order attribution.
+V2 replaces that with a public **builder code** attached directly to each order.
 
-### Builder Headers (4 required)
-
-| Header | Description |
-|--------|-------------|
-| `POLY_BUILDER_API_KEY` | Builder API key |
-| `POLY_BUILDER_TIMESTAMP` | Unix timestamp |
-| `POLY_BUILDER_PASSPHRASE` | Builder passphrase |
-| `POLY_BUILDER_SIGNATURE` | HMAC-SHA256 of request |
-
-### Initialize Client with Builder Config
+### Per-order builder code
 
 ```typescript
-// TypeScript — local signing
-import { BuilderConfig, BuilderApiKeyCreds } from "@polymarket/builder-signing-sdk";
-
-const builderCreds: BuilderApiKeyCreds = {
-  key: process.env.POLY_BUILDER_API_KEY!,
-  secret: process.env.POLY_BUILDER_SECRET!,
-  passphrase: process.env.POLY_BUILDER_PASSPHRASE!,
-};
-
-const builderConfig = new BuilderConfig({ localBuilderCreds: builderCreds });
-
-const client = new ClobClient(
-  "https://clob.polymarket.com",
-  137,
-  signer,
-  apiCreds,
-  2,
-  funderAddress,
-  undefined,
-  false,
-  builderConfig
+await client.createAndPostOrder(
+  {
+    tokenID: "TOKEN_ID",
+    price: 0.55,
+    size: 100,
+    side: Side.BUY,
+    builderCode: process.env.POLY_BUILDER_CODE,
+  },
+  { tickSize: "0.01", negRisk: false },
 );
-// Orders automatically include builder headers
 ```
 
-```python
-# Python — local signing
-from py_builder_signing_sdk import BuilderConfig, BuilderApiKeyCreds
-
-builder_config = BuilderConfig(
-    local_builder_creds=BuilderApiKeyCreds(
-        key=os.environ["POLY_BUILDER_API_KEY"],
-        secret=os.environ["POLY_BUILDER_SECRET"],
-        passphrase=os.environ["POLY_BUILDER_PASSPHRASE"],
-    )
-)
-
-client = ClobClient(
-    host="https://clob.polymarket.com",
-    chain_id=137,
-    key=pk,
-    creds=api_creds,
-    signature_type=2,
-    funder=funder_address,
-    builder_config=builder_config,
-)
-```
-
-### Remote Signing
-
-Keep builder credentials on a separate server. Client points to your signing endpoint:
+### Client-wide builder code
 
 ```typescript
-// TypeScript client
-const builderConfig = new BuilderConfig({
-  remoteBuilderConfig: { url: "https://your-server.com/sign" },
+const client = new ClobClient({
+  host: "https://clob.polymarket.com",
+  chain: 137,
+  signer,
+  creds: apiCreds,
+  signatureType: 2,
+  funderAddress,
+  builderConfig: { builderCode: process.env.POLY_BUILDER_CODE! },
 });
 ```
 
-```python
-# Python client
-from py_builder_signing_sdk import BuilderConfig, RemoteBuilderConfig
+### What changed
 
-builder_config = BuilderConfig(
-    remote_builder_config=RemoteBuilderConfig(url="https://your-server.com/sign")
-)
-```
+- removed for CLOB order attribution:
+  - `POLY_BUILDER_API_KEY`
+  - `POLY_BUILDER_SECRET`
+  - `POLY_BUILDER_PASSPHRASE`
+  - `POLY_BUILDER_SIGNATURE`
+  - `@polymarket/builder-signing-sdk`
+- added:
+  - `builderCode` on each order, or
+  - `builderConfig: { builderCode }` on the client
 
-Your server receives `{ method, path, body }` and returns the 4 `POLY_BUILDER_*` headers.
+## Raw Order Signing Changes
+
+Only relevant if you sign raw order structs yourself instead of using the SDK.
+
+### Exchange domain changes
+
+- exchange EIP-712 domain version: `"1"` → `"2"`
+- standard exchange verifying contract:
+  - V1: `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E`
+  - V2: `0xE111180000d2663C0091e4f400237545B87B996B`
+- neg risk exchange verifying contract:
+  - V1: `0xC5d563A36AE78145C45a50134d48A1215220f80a`
+  - V2: `0xe2222d279d744050d28e00520010520000310F59`
+
+### Signed order field changes
+
+Removed from signed orders:
+- `taker`
+- `nonce`
+- `feeRateBps`
+- `expiration` from the EIP-712 struct shown in V1 docs
+
+Added in V2:
+- `timestamp` (ms)
+- `metadata` (`bytes32`)
+- `builder` (`bytes32`)
+
+If you use the official V2 SDK, this is handled for you.
 
 ## Credential Lifecycle
 
-- **Create**: `client.createApiKey()` — generates new credentials with a nonce
-- **Derive**: `client.deriveApiKey(nonce)` — recovers existing credentials if you know the nonce
-- **Create or Derive**: `client.createOrDeriveApiKey()` — creates if first time, derives if existing
-- **Revoke builder key**: `client.revokeBuilderApiKey()` — invalidate compromised builder credentials
+- `createApiKey()` — create new API credentials
+- `deriveApiKey(nonce)` — derive existing credentials
+- `createOrDeriveApiKey()` — preferred setup flow
 
-Lost credentials + lost nonce = create fresh credentials. Save your nonce.
+Your existing API keys continue to work in V2.

@@ -1,88 +1,108 @@
 # Polymarket Integration Skill
 
-Agent skill for building on Polymarket — the world's largest prediction market. Gives agents the knowledge to authenticate, place orders, read markets, stream real-time data, manage positions, bridge assets across chains, and execute gasless transactions.
+Agent skill for building on Polymarket CLOB V2. Covers authentication, trading, market data, WebSockets, CTF token operations, bridge flows, and gasless relayer usage.
 
 ## What's Included
 
 ```
 web3-polymarket/
-├── SKILL.md              # Entry point — quick reference, client setup, core patterns
-├── README.md             # This file
-├── authentication.md     # L1/L2 auth, builder headers, credential lifecycle
-├── order-patterns.md     # Order types, tick sizes, cancel, heartbeat, errors
-├── market-data.md        # Gamma API, Data API, CLOB orderbook, subgraph
-├── websocket.md          # Market/user/sports channels, subscribe, heartbeat
-├── ctf-operations.md     # Split, merge, redeem, negative risk, token IDs
-├── bridge.md             # Deposits, withdrawals, supported chains/tokens
-└── gasless.md            # Relayer client, wallet deployment, builder setup
+├── SKILL.md
+├── README.md
+├── authentication.md
+├── order-patterns.md
+├── market-data.md
+├── websocket.md
+├── ctf-operations.md
+├── bridge.md
+└── gasless.md
 ```
+
+## V2 status
+
+Validated against:
+- `https://docs.polymarket.com/llms.txt`
+- `https://docs.polymarket.com/v2-migration.md`
+
+Key V2 changes reflected here:
+- `@polymarket/clob-client-v2` / `py-clob-client-v2`
+- constructor uses an **options object** in TypeScript and `chain` instead of `chain_id`
+- signed orders use `timestamp`, `metadata`, `builder`; not `nonce`, `feeRateBps`, `taker`
+- **pUSD** replaces USDC.e as trading collateral
+- builder attribution uses **`builderCode`**, not `POLY_BUILDER_*` headers
+- exchange contracts moved to V2 addresses
+- Gamma keyset pagination endpoints are documented
 
 ## How It Works
 
-The skill uses **progressive disclosure** to stay efficient with context:
-
-1. **SKILL.md loads first** — contains API endpoints, contract addresses, client setup, and core code patterns. Enough for most tasks.
-2. **Reference files load on demand** — when a task needs deeper detail (e.g., full error code list, bridge chain support, WebSocket event schemas), the agent reads the relevant file.
-
-This keeps the initial context small (~200 lines) while giving access to ~1,700 lines of detailed reference material when needed.
+1. **SKILL.md loads first** for quick-reference setup and core flows.
+2. **Reference files load on demand** for deeper detail.
 
 ## When Agents Use This Skill
 
-An agent activates this skill when a user asks about:
+Use it for:
+- authentication and API key setup
+- V2 order creation and order management
+- market/event discovery and orderbook reads
+- WebSocket streaming
+- pUSD / CTF operations
+- bridging and funding flows
+- gasless relayer transactions
+- builder code attribution
 
-- **Authentication** — API keys, EIP-712 signing, HMAC-SHA256, builder credentials
-- **Trading** — placing limit/market orders (GTC, GTD, FOK, FAK), batch orders, cancellation, heartbeat keepalive
-- **Market data** — fetching events/markets from Gamma API, reading orderbook prices/spreads/midpoints, price history
-- **Real-time data** — WebSocket subscriptions for orderbook updates, trade notifications, sports scores
-- **Token operations** — splitting USDC.e into Yes/No tokens, merging, redeeming after resolution
-- **Bridging** — depositing from 15+ chains, withdrawing, checking status
-- **Gasless transactions** — relayer client for gas-free onchain operations
-- **Negative risk** — multi-outcome markets, token conversion, augmented neg risk
+## Quick Start
 
-## Quick Start for Humans
-
-If you're a developer reading this directly (not an agent), here's the fastest path:
-
-### 1. Install the SDK
+### Install the V2 SDK
 
 ```bash
 # TypeScript
-npm install @polymarket/clob-client ethers@5.8.0
+npm install @polymarket/clob-client-v2 ethers@5.8.0
 
 # Python
-pip install py-clob-client
+pip install py-clob-client-v2
 ```
 
-### 2. Get API Credentials
+### Create API credentials
 
 ```typescript
-import { ClobClient } from "@polymarket/clob-client";
+import { ClobClient } from "@polymarket/clob-client-v2";
 import { Wallet } from "ethers";
 
-const client = new ClobClient(
-  "https://clob.polymarket.com",
-  137,
-  new Wallet(process.env.PRIVATE_KEY)
-);
+const signer = new Wallet(process.env.PRIVATE_KEY!);
+const client = new ClobClient({
+  host: "https://clob.polymarket.com",
+  chain: 137,
+  signer,
+});
+
 const creds = await client.createOrDeriveApiKey();
 ```
 
-### 3. Place an Order
+### Place an order
 
 ```typescript
-const tradingClient = new ClobClient(
-  "https://clob.polymarket.com",
-  137,
+import { ClobClient, Side, OrderType } from "@polymarket/clob-client-v2";
+
+const tradingClient = new ClobClient({
+  host: "https://clob.polymarket.com",
+  chain: 137,
   signer,
   creds,
-  2,              // GNOSIS_SAFE (most common)
-  "FUNDER_ADDR"   // from polymarket.com/settings
-);
+  signatureType: 2,
+  funderAddress: process.env.FUNDER_ADDRESS!,
+  builderConfig: process.env.POLY_BUILDER_CODE
+    ? { builderCode: process.env.POLY_BUILDER_CODE }
+    : undefined,
+});
 
 const response = await tradingClient.createAndPostOrder(
-  { tokenID: "TOKEN_ID", price: 0.50, size: 10, side: "BUY" },
+  {
+    tokenID: "TOKEN_ID",
+    price: 0.50,
+    size: 10,
+    side: Side.BUY,
+  },
   { tickSize: "0.01", negRisk: false },
-  "GTC"
+  OrderType.GTC,
 );
 ```
 
@@ -90,23 +110,25 @@ const response = await tradingClient.createAndPostOrder(
 
 | Concept | Description |
 |---------|-------------|
-| **USDC.e** | Bridged USDC on Polygon — the collateral token for all markets |
-| **Condition ID** | Identifies a market (used in API as `market` or `conditionID`) |
-| **Token ID** | Identifies a specific outcome token (Yes or No) within a market |
-| **Funder** | The proxy wallet address that holds funds — find at polymarket.com/settings |
-| **Signature Type** | `0` = EOA, `1` = POLY_PROXY (Magic Link), `2` = GNOSIS_SAFE (most common) |
-| **Neg Risk** | Multi-outcome markets where outcomes are linked — set `negRisk: true` in order options |
-| **Tick Size** | Minimum price increment for a market — must match or orders are rejected |
+| **pUSD** | The collateral token used for trading on Polymarket |
+| **USDC.e** | Source asset wrapped into pUSD for API-only flows |
+| **Condition ID** | Market identifier |
+| **Token ID** | Outcome token identifier |
+| **Funder** | Wallet address holding funds |
+| **Signature Type** | `0` EOA, `1` POLY_PROXY, `2` GNOSIS_SAFE |
+| **Builder Code** | Public builder identifier attached to orders for attribution |
+| **Neg Risk** | Multi-outcome markets with linked outcomes |
 
 ## API Endpoints
 
 | API | Base URL | Auth Required |
 |-----|----------|---------------|
-| CLOB | `https://clob.polymarket.com` | L2 headers for trades, none for reads |
+| CLOB V2 | `https://clob.polymarket.com` | L2 for trades, none for reads |
+| CLOB V2 Test | `https://clob-v2.polymarket.com` | L2 for trades, none for reads |
 | Gamma | `https://gamma-api.polymarket.com` | None |
 | Data | `https://data-api.polymarket.com` | None |
 | Bridge | `https://bridge.polymarket.com` | None |
-| Relayer | `https://relayer-v2.polymarket.com/` | Builder headers |
+| Relayer | `https://relayer-v2.polymarket.com/` | Relayer API key or Builder API key |
 | WS Market | `wss://ws-subscriptions-clob.polymarket.com/ws/market` | None |
 | WS User | `wss://ws-subscriptions-clob.polymarket.com/ws/user` | API creds in message |
 | WS Sports | `wss://sports-api.polymarket.com/ws` | None |
@@ -115,31 +137,31 @@ const response = await tradingClient.createAndPostOrder(
 
 | Contract | Address |
 |----------|---------|
-| USDC.e (Bridged USDC) | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` |
+| pUSD | `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` |
+| USDC.e | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` |
 | CTF | `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` |
-| CTF Exchange | `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E` |
-| Neg Risk CTF Exchange | `0xC5d563A36AE78145C45a50134d48A1215220f80a` |
+| CTF Exchange V2 | `0xE111180000d2663C0091e4f400237545B87B996B` |
+| Neg Risk CTF Exchange V2 | `0xe2222d279d744050d28e00520010520000310F59` |
 | Neg Risk Adapter | `0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296` |
+| Collateral Onramp | `0x93070a847efEf7F70739046A929D47a521F5B8ee` |
+| Collateral Offramp | `0x2957922Eb93258b93368531d39fAcCA3B4dC5854` |
 
 ## File Guide
 
-| File | Read when you need to... |
-|------|--------------------------|
-| [SKILL.md](SKILL.md) | Get started — has everything for basic integration |
-| [authentication.md](authentication.md) | Understand L1/L2 auth flow, builder headers, or troubleshoot credential issues |
-| [order-patterns.md](order-patterns.md) | Use advanced order types (GTD, post-only, batch), handle errors, or implement heartbeat |
-| [market-data.md](market-data.md) | Query markets by slug/tag, paginate results, use subgraph, or estimate fill prices |
-| [websocket.md](websocket.md) | Stream real-time orderbook updates, trade notifications, or sports scores |
-| [ctf-operations.md](ctf-operations.md) | Split/merge/redeem tokens, work with neg risk markets, or compute token IDs |
-| [bridge.md](bridge.md) | Deposit from other chains, withdraw, check supported assets, or track transaction status |
-| [gasless.md](gasless.md) | Set up gas-free transactions via the relayer, deploy wallets, or configure builder credentials |
+| File | Use it when you need to... |
+|------|----------------------------|
+| [SKILL.md](SKILL.md) | Get the quick-reference V2 setup |
+| [authentication.md](authentication.md) | Understand L1/L2 auth and builderCode attribution |
+| [order-patterns.md](order-patterns.md) | Create, submit, cancel, and maintain orders |
+| [market-data.md](market-data.md) | Query events, markets, CLOB data, and pagination |
+| [websocket.md](websocket.md) | Stream market and user updates |
+| [ctf-operations.md](ctf-operations.md) | Split, merge, and redeem pUSD-backed positions |
+| [bridge.md](bridge.md) | Deposit, withdraw, and track bridge flows |
+| [gasless.md](gasless.md) | Use the relayer for gasless onchain actions |
 
 ## SDKs
 
-- **TypeScript**: [@polymarket/clob-client](https://github.com/Polymarket/clob-client)
-- **Python**: [py-clob-client](https://github.com/Polymarket/py-clob-client)
-- **Rust**: [rs-clob-client](https://github.com/Polymarket/rs-clob-client)
+- **TypeScript CLOB V2**: [@polymarket/clob-client-v2](https://www.npmjs.com/package/@polymarket/clob-client-v2)
+- **Python CLOB V2**: [py-clob-client-v2](https://pypi.org/project/py-clob-client-v2/)
 - **Builder Relayer (TS)**: [@polymarket/builder-relayer-client](https://github.com/Polymarket/builder-relayer-client)
 - **Builder Relayer (Python)**: [py-builder-relayer-client](https://github.com/Polymarket/py-builder-relayer-client)
-- **Builder Signing (TS)**: [@polymarket/builder-signing-sdk](https://github.com/Polymarket/builder-signing-sdk)
-- **Builder Signing (Python)**: [py-builder-signing-sdk](https://github.com/Polymarket/py-builder-signing-sdk)

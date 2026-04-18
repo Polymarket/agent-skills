@@ -1,95 +1,116 @@
 # Market Data
 
-Four sources for market data: **Gamma API** (events, markets, search), **Data API** (trades, positions, user data), **CLOB** (orderbook, prices), and **Subgraph** (onchain queries).
+Polymarket market data comes from four main sources:
+- **Gamma API** — events, markets, search, metadata
+- **Data API** — trades, positions, user-related data
+- **CLOB API** — orderbook, prices, spreads, fees, CLOB market info
+- **Subgraph** — onchain analytics and historical queries
 
 ## Gamma API
 
-Base URL: `https://gamma-api.polymarket.com` — no auth required.
+Base URL: `https://gamma-api.polymarket.com`
 
-### Events Endpoint
+### Events
 
 ```bash
-# All active events
-GET https://gamma-api.polymarket.com/events?active=true&closed=false&limit=100
-
-# By slug (from polymarket.com/event/{slug})
+# By slug
 GET https://gamma-api.polymarket.com/events?slug=fed-decision-in-october
 
 # By tag
-GET https://gamma-api.polymarket.com/events?tag_id=100381&limit=10&active=true&closed=false
+GET https://gamma-api.polymarket.com/events?tag_id=100381&closed=false&limit=10
 
-# By series (sports)
-GET https://gamma-api.polymarket.com/events?series_id=10345&active=true&closed=false
-
-# Sorted by volume
-GET https://gamma-api.polymarket.com/events?active=true&closed=false&order=volume_24hr&ascending=false&limit=100
+# By series
+GET https://gamma-api.polymarket.com/events?series_id=10345&closed=false&limit=20
 ```
 
-### Markets Endpoint
+### Markets
 
 ```bash
 # By slug
 GET https://gamma-api.polymarket.com/markets?slug=fed-decision-in-october
 ```
 
-### Sort Parameters
+## Recommended pagination: keyset endpoints
 
-| Parameter | Values |
-|-----------|--------|
-| `order` | `volume_24hr`, `volume`, `liquidity`, `start_date`, `end_date`, `competitive`, `closed_time` |
-| `ascending` | `true` / `false` (default: `false`) |
-| `active` | `true` / `false` |
-| `closed` | `true` / `false` |
-| `limit` | 1–500 (default: 20) |
-| `offset` | Pagination offset |
+Polymarket now documents **keyset pagination** for stable paging through large datasets.
+Prefer these over offset-based pagination when scanning many rows.
 
-### Pagination
+### Events keyset pagination
 
 ```bash
-# Page 1
-GET https://gamma-api.polymarket.com/events?active=true&closed=false&limit=50&offset=0
-
-# Page 2
-GET https://gamma-api.polymarket.com/events?active=true&closed=false&limit=50&offset=50
+GET https://gamma-api.polymarket.com/events/keyset?closed=false&limit=50
+GET https://gamma-api.polymarket.com/events/keyset?closed=false&limit=50&after_cursor=NEXT_CURSOR
 ```
 
-Response includes `has_more: true/false`. Increment offset by limit until `has_more` is `false`.
-
-### Tags & Sports
+### Markets keyset pagination
 
 ```bash
-# Discover tags
-GET https://gamma-api.polymarket.com/tags
+GET https://gamma-api.polymarket.com/markets/keyset?closed=false&limit=100
+GET https://gamma-api.polymarket.com/markets/keyset?closed=false&limit=100&after_cursor=NEXT_CURSOR
+```
 
-# Sports metadata
+Rules:
+- use `next_cursor` from the previous response as `after_cursor`
+- `offset` is explicitly rejected on keyset endpoints
+- max limits:
+  - events keyset: `500`
+  - markets keyset: `1000`
+
+### Common filters
+
+| Parameter | Notes |
+|-----------|-------|
+| `slug` | Fetch a specific event or market |
+| `tag_id` / `tag_slug` | Category filters |
+| `closed` | Historical vs active |
+| `order` | Sort field(s) |
+| `ascending` | Sort direction |
+| `limit` | Page size |
+| `after_cursor` | Keyset pagination cursor |
+
+### Tags & Sports metadata
+
+```bash
+GET https://gamma-api.polymarket.com/tags
 GET https://gamma-api.polymarket.com/sports
 ```
 
 ## Data API
 
-Base URL: `https://data-api.polymarket.com` — no auth required. Used for trades, positions, and user-specific data.
+Base URL: `https://data-api.polymarket.com`
 
-## CLOB Orderbook
+Used for trades, positions, activity, and user-related reporting endpoints.
 
-Base URL: `https://clob.polymarket.com` — no auth for read endpoints.
+## CLOB Market Data
 
-### Get Orderbook
+Base URL: `https://clob.polymarket.com`
+
+No auth required for read-only endpoints.
+
+### Read client setup
 
 ```typescript
-// TypeScript
-const client = new ClobClient("https://clob.polymarket.com", 137);
-const book = await client.getOrderBook("TOKEN_ID");
-// { bids: [{price, size}...], asks: [{price, size}...], tick_size, min_order_size, neg_risk }
+import { ClobClient } from "@polymarket/clob-client-v2";
+
+const client = new ClobClient({
+  host: "https://clob.polymarket.com",
+  chain: 137,
+});
 ```
 
 ```python
-# Python
-client = ClobClient("https://clob.polymarket.com", chain_id=137)
-book = client.get_order_book("TOKEN_ID")
+from py_clob_client.client import ClobClient
+
+client = ClobClient(host="https://clob.polymarket.com", chain=137)
+```
+
+### Orderbook
+
+```typescript
+const book = await client.getOrderBook("TOKEN_ID");
 ```
 
 ```bash
-# REST
 curl "https://clob.polymarket.com/book?token_id=TOKEN_ID"
 ```
 
@@ -97,68 +118,15 @@ curl "https://clob.polymarket.com/book?token_id=TOKEN_ID"
 
 ```typescript
 const buyPrice = await client.getPrice("TOKEN_ID", "BUY");   // best ask
-const sellPrice = await client.getPrice("TOKEN_ID", "SELL");  // best bid
+const sellPrice = await client.getPrice("TOKEN_ID", "SELL"); // best bid
+const mid = await client.getMidpoint("TOKEN_ID");
+const spread = await client.getSpread("TOKEN_ID");
+const last = await client.getLastTradePrice("TOKEN_ID");
 ```
 
-```bash
-curl "https://clob.polymarket.com/price?token_id=TOKEN_ID&side=BUY"
-```
+### Batch reads
 
-### Midpoint
-
-```typescript
-const mid = await client.getMidpoint("TOKEN_ID");  // { mid: "0.50" }
-```
-
-If bid-ask spread > $0.10, Polymarket UI shows last traded price instead of midpoint.
-
-### Spread
-
-```typescript
-const spread = await client.getSpread("TOKEN_ID");  // { spread: "0.04" }
-```
-
-### Last Trade Price
-
-```typescript
-const last = await client.getLastTradePrice("TOKEN_ID");  // { price, side }
-```
-
-### Price History
-
-```typescript
-const history = await client.getPricesHistory({
-  market: "TOKEN_ID",
-  interval: PriceHistoryInterval.ONE_DAY,
-  fidelity: 60,  // data points every 60 minutes
-});
-// Each entry: { t: timestamp, p: price }
-```
-
-| Interval | Description |
-|----------|-------------|
-| `1h` | Last hour |
-| `6h` | Last 6 hours |
-| `1d` | Last day |
-| `1w` | Last week |
-| `1m` | Last month |
-| `max` | All available |
-
-Use `startTs`/`endTs` for absolute ranges (mutually exclusive with `interval`).
-
-### Estimate Fill Price
-
-Walk the orderbook to estimate slippage for a given order size:
-
-```typescript
-const price = await client.calculateMarketPrice(
-  "TOKEN_ID", Side.BUY, 500, OrderType.FOK
-);
-```
-
-### Batch Requests
-
-All orderbook queries have batch variants (up to 500 tokens):
+All major market-data methods have batch variants.
 
 | Single | Batch | REST |
 |--------|-------|------|
@@ -166,51 +134,84 @@ All orderbook queries have batch variants (up to 500 tokens):
 | `getPrice()` | `getPrices()` | `POST /prices` |
 | `getMidpoint()` | `getMidpoints()` | `POST /midpoints` |
 | `getSpread()` | `getSpreads()` | `POST /spreads` |
-| `getLastTradePrice()` | `getLastTradesPrices()` | — |
+| `getLastTradePrice()` | `getLastTradesPrices()` | request body variant documented |
+
+## V2 CLOB market info
+
+V2 adds `getClobMarketInfo()`, which exposes market-specific CLOB parameters in one call.
 
 ```typescript
-const prices = await client.getPrices([
-  { token_id: "TOKEN_A", side: Side.BUY },
-  { token_id: "TOKEN_B", side: Side.BUY },
-]);
+const info = await client.getClobMarketInfo("0xCONDITION_ID");
+// info.mts  minimum tick size
+// info.mos  minimum order size
+// info.fd   fee details { r, e, to }
+// info.t    tokens [{ t, o }]
+// info.rfqe request-for-quote enabled
 ```
+
+```bash
+curl "https://clob.polymarket.com/clob-markets/0xCONDITION_ID"
+```
+
+Useful fields:
+- `mts` — minimum tick size
+- `mos` — minimum order size
+- `fd` — fee curve params
+- `t` — token IDs and outcomes
+- `rfqe` — RFQ enabled
+- `mbf` / `tbf` — base fees
+
+## Fee model notes
+
+In V2, fees are not embedded in the signed order.
+They are determined by protocol market parameters at match time.
+For manual inspection, use `getClobMarketInfo()`.
+
+## Price history
+
+```typescript
+const history = await client.getPricesHistory({
+  market: "TOKEN_ID",
+  interval: PriceHistoryInterval.ONE_DAY,
+  fidelity: 60,
+});
+```
+
+Intervals commonly used:
+- `1h`
+- `6h`
+- `1d`
+- `1w`
+- `1m`
+- `max`
 
 ## Key Market Fields
 
 | Field | Description |
 |-------|-------------|
-| `tokenID` / `asset_id` | ERC1155 token ID for an outcome |
-| `conditionID` / `market` | Condition ID — identifies the market |
-| `questionID` | Hash of UMA ancillary data |
-| `neg_risk` | `true` for multi-outcome events |
-| `minimum_tick_size` | Minimum price increment |
-| `enableOrderBook` | Whether orderbook is active |
-| `slug` | URL-friendly identifier |
-| `tokens` | Array of `{ token_id, outcome }` for both outcomes |
+| `tokenID` / `asset_id` | Outcome token ID |
+| `conditionID` / `market` | Condition ID |
+| `tokens` | Array of outcome token objects |
+| `neg_risk` / `negRisk` | Neg risk market flag |
+| `minimum_tick_size` | Tick size |
+| `enableOrderBook` | Orderbook enabled |
+| `slug` | URL slug |
 
-## Subgraph (Onchain Data)
+## Subgraph
 
-GraphQL queries via Goldsky-hosted subgraphs:
-
-| Subgraph | Description |
-|----------|-------------|
-| Positions | User token balances |
-| Orders | Order book and trade events |
-| Activity | Splits, merges, redemptions |
-| Open Interest | Market and global OI |
-| PNL | User position P&L |
+Useful for onchain analytics, open interest, PnL, balances, and historical event data.
 
 ```bash
 curl -X POST \
   https://api.goldsky.com/api/public/project_cl6mb8i9h0003e201j6li0diw/subgraphs/orderbook-subgraph/0.0.1/gn \
   -H "Content-Type: application/json" \
-  -d '{"query": "query { orderbooks { id tradesQuantity } }"}'
+  -d '{"query":"query { orderbooks { id tradesQuantity } }"}'
 ```
 
-## Fetching Strategy
+## Practical fetching strategy
 
-1. **Specific market**: fetch by slug — `GET https://gamma-api.polymarket.com/events?slug=...`
-2. **Category browsing**: filter by tag — `GET https://gamma-api.polymarket.com/events?tag_id=...`
-3. **All active markets**: paginate events — `GET https://gamma-api.polymarket.com/events?active=true&closed=false`
-4. **Always include** `active=true&closed=false` unless you need historical data
-5. **Events > Markets**: events contain their markets, reducing API calls
+1. Fetch a known event by `slug`
+2. For browsing, use `events/keyset` or `markets/keyset`
+3. Pull token IDs from Gamma responses
+4. Query CLOB orderbook / prices using token IDs
+5. Use `getClobMarketInfo()` when you need tick size, fee params, minimum order size, or token mappings
