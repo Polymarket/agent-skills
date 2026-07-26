@@ -198,7 +198,7 @@
 
     const strikePrice = Number(strikeRound.answer) / 1e8;
     const currentPrice = Number(latest.answer) / 1e8;
-    const direction   = currentPrice > strikePrice ? "UP" : currentPrice < strikePrice ? "DOWN" : "FLAT";
+    const direction   = currentPrice >= strikePrice ? "UP" : "DOWN"; // equal resolves UP per Polymarket rules
     const changePct   = ((currentPrice - strikePrice) / strikePrice) * 100;
 
     return {
@@ -249,7 +249,7 @@
     if strike:
       strike_price = strike[1] / 1e8
       current      = feed.functions.latestRoundData().call()[1] / 1e8
-      direction    = "UP" if current > strike_price else "DOWN"
+      direction    = "UP" if current >= strike_price else "DOWN"  # equal resolves UP per Polymarket rules
       print(f"Strike: ${strike_price:.2f} | Current: ${current:.2f} | {direction}")
     ```
 
@@ -351,10 +351,49 @@
     round ID and answer stored on-chain at the time of the `resolve()` call.
 
     ```typescript
-    // Quick sanity-check: does the oracle agree with the resolved outcome?
-    const { strikePrice, currentPrice, direction } = await getStrikeRound("BTC/USD", windowStart);
-    const resolvedYes = payoutNumerators[0] > 0n;  // from CTF contract
-    const oracleAgrees = (direction === "UP") === resolvedYes;
+    // Sanity-check: does the Chainlink price at window CLOSE agree with the resolved outcome?
+    //
+    // ⚠️  Do NOT use latestRoundData() here — for any window that ended in the past, the live
+    // price will differ from the settlement price. Fetch the specific round whose
+    // updatedAt ≤ windowEnd instead.
+    //
+    // Parse window duration from the market slug ("5m"→300s, "15m"→900s, "1h"→3600s).
+    const DURATION: Record<string, number> = { "5m": 300, "15m": 900, "1h": 3600 };
+    const slugParts   = marketSlug.split("-");
+    const durKey      = slugParts.find((p: string) => p in DURATION) ?? "15m";
+    const windowEnd   = windowStart + DURATION[durKey];
+
+    // Reusable helper: Chainlink round whose updatedAt <= targetTs
+    async function roundAtTime(targetTs: number) {
+      const provider = new ethers.JsonRpcProvider("https://polygon-rpc.com");
+      const feed     = new ethers.Contract(BTC_USD_ADDRESS, AGGREGATOR_ABI, provider);
+      const latest   = await feed.latestRoundData();
+      const phaseId  = latest.roundId >> 64n;
+      const aggRound = latest.roundId & 0xFFFFFFFFFFFFFFFFn;
+      let lo = 0n, hi = BigInt(Math.min(2000, Number(aggRound) - 1)), best = null;
+      while (lo <= hi) {
+        const mid = (lo + hi) / 2n;
+        const r   = await feed.getRoundData((phaseId << 64n) | (aggRound - mid));
+        if (Number(r.updatedAt) <= targetTs) { best = r; hi = mid - 1n; }
+        else lo = mid + 1n;
+      }
+      return best;
+    }
+
+    const [strikeRound, closeRound] = await Promise.all([
+      roundAtTime(windowStart), // round active at window open  → strike price
+      roundAtTime(windowEnd),   // round active at window close → settlement price
+    ]);
+    if (!strikeRound || !closeRound) throw new Error("Round lookup failed");
+
+    const strikePrice     = Number(strikeRound.answer) / 1e8;
+    const closePrice      = Number(closeRound.answer)  / 1e8;
+    // Equal close price resolves UP per Polymarket rules (end >= start → UP)
+    const oracleDirection = closePrice >= strikePrice ? "UP" : "DOWN";
+
+    const resolvedYes  = payoutNumerators[0] > 0n; // from CTF contract
+    const oracleAgrees = (oracleDirection === "UP") === resolvedYes;
+    console.log(`Strike: $${strikePrice.toFixed(2)} | Close (${new Date(windowEnd * 1000).toISOString()}): $${closePrice.toFixed(2)} | ${oracleDirection}`);
     console.log(`Oracle agrees with resolution: ${oracleAgrees}`);
     ```
 
