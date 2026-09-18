@@ -202,3 +202,4 @@ Only read these when the task requires deeper detail on a specific topic:
 - **CTF operations** (split, merge, redeem, neg risk, token IDs): [ctf-operations.md](ctf-operations.md)
 - **Bridge** (deposits, withdrawals, supported chains/tokens, status): [bridge.md](bridge.md)
 - **Gasless transactions** (relayer client, wallet deployment, builder setup): [gasless.md](gasless.md)
+- **Strategy provenance** (optional commit/reveal records and evidence): [strategy-provenance.md](strategy-provenance.md)
