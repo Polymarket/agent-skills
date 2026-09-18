@@ -38,6 +38,7 @@ An agent activates this skill when a user asks about:
 - **Bridging** — depositing from 15+ chains, withdrawing, checking status
 - **Gasless transactions** — relayer client for gas-free onchain operations
 - **Negative risk** — multi-outcome markets, token conversion, augmented neg risk
+- **Strategy provenance** — optional pre-trade commitments and post-trade evidence
 
 ## Quick Start for Humans
 
@@ -133,6 +134,7 @@ const response = await tradingClient.createAndPostOrder(
 | [ctf-operations.md](ctf-operations.md) | Split/merge/redeem tokens, work with neg risk markets, or compute token IDs |
 | [bridge.md](bridge.md) | Deposit from other chains, withdraw, check supported assets, or track transaction status |
 | [gasless.md](gasless.md) | Set up gas-free transactions via the relayer, deploy wallets, or configure builder credentials |
+| [strategy-provenance.md](strategy-provenance.md) | Add optional commit/reveal provenance without treating it as official attribution |
 
 ## SDKs
 
