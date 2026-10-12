@@ -15,6 +15,7 @@ web3-polymarket/
 ├── ctf-operations.md     # Split, merge, redeem, negative risk, token IDs
 ├── bridge.md             # Deposits, withdrawals, supported chains/tokens
 └── gasless.md            # Relayer client, wallet deployment, builder setup
+    wallet-intelligence.md # Decision layer: is the wallet on the other side skilled?
 ```
 
 ## How It Works
@@ -38,6 +39,7 @@ An agent activates this skill when a user asks about:
 - **Bridging** — depositing from 15+ chains, withdrawing, checking status
 - **Gasless transactions** — relayer client for gas-free onchain operations
 - **Negative risk** — multi-outcome markets, token conversion, augmented neg risk
+- **Wallet intelligence** — whether the wallet on the other side of a trade is actually skilled, a bot, or part of a coordinated cluster; sample-size-corrected win rates and funding clusters
 
 ## Quick Start for Humans
 
@@ -133,6 +135,7 @@ const response = await tradingClient.createAndPostOrder(
 | [ctf-operations.md](ctf-operations.md) | Split/merge/redeem tokens, work with neg risk markets, or compute token IDs |
 | [bridge.md](bridge.md) | Deposit from other chains, withdraw, check supported assets, or track transaction status |
 | [gasless.md](gasless.md) | Set up gas-free transactions via the relayer, deploy wallets, or configure builder credentials |
+| [wallet-intelligence.md](wallet-intelligence.md) | Judge the wallet on the other side of a trade — sample-size-corrected win rates, bot/human verdicts, funding clusters |
 
 ## SDKs
 

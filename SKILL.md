@@ -20,6 +20,7 @@ Use this skill when the user asks about or needs to build:
 - Gasless transactions (relayer client, order attribution)
 - Builder program integration (order attribution, API keys, tiers)
 - Polymarket SDK usage (TypeScript @polymarket/clob-client, Python py-clob-client)
+- Whether the wallet on the other side of a trade is skilled, a bot, or one of a coordinated cluster — see `wallet-intelligence.md`
 
 ## API Configuration
 
